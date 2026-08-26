@@ -76,13 +76,14 @@ jobs:
           hooks: goreleaser
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Signs with Dilithium
+      - name: Signs with ML-DSA-87
         if: steps.semrel.outputs.version != ''
-        uses: theQRL/actions-dilithium-sign@b45eedda2c2977608cb74867e7d5326e22b0be91 # v1
+        uses: theQRL/actions-mldsa-sign@97a05abefff417d595c28c7b5d9d886ebe2fe9d0 # v1.0.0
         with:
           patterns: |
             dist/*.zip
-          hexseed: ${{ secrets.DILITHIUM_HEXSEED }}
+          hexseed: ${{ secrets.MLDSA_HEXSEED }}
+          context: qrlft-release-signatures
           output: sig.txt
       - uses: actions-ecosystem/action-get-latest-tag@b7c32daec3395a9616f88548363a42652b22d435 # v1
         if: steps.semrel.outputs.version != ''

@@ -10,6 +10,22 @@ This project uses [semantic-release](https://semantic-release.gitbook.io/) to au
 4. Changelog is generated
 5. GitHub release is created with binaries
 
+## Release Signing
+
+After goreleaser builds `dist/*.zip`, CI signs every archive with ML-DSA-87
+(FIPS 204) via the pinned `theQRL/actions-mldsa-sign` action and uploads the
+result to the release as `qrlft_<tag>_signatures.txt`.
+
+- Context string: `qrlft-release-signatures` — signatures do not verify without it
+- Signing key: repository secret `MLDSA_HEXSEED` (the hexseed for
+  `qrlft-release-key.pub`, which is committed at the repo root)
+
+Consumer-facing verification steps live in
+[README.md](README.md#verifying-a-release). Rotating the key means generating a
+new keypair with the same context, replacing the `MLDSA_HEXSEED` secret, and
+committing the new `qrlft-release-key.pub` — previously published signatures
+still verify only under the old key, so keep it available.
+
 ## Commit Message Format
 
 Commits must follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
