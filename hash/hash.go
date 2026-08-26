@@ -4,6 +4,7 @@ package hash
 import (
 	"bufio"
 	"crypto/sha256"
+	"crypto/sha3"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,20 +13,20 @@ import (
 	"os"
 
 	"golang.org/x/crypto/blake2s"
-	"golang.org/x/crypto/sha3"
+	xsha3 "golang.org/x/crypto/sha3"
 )
 
 const bufferSize = 65536
 
 // Keccak256Reader returns Keccak-256 checksum of content in reader
 func Keccak256Reader(reader io.Reader) (string, error) {
-	hash := sha3.NewLegacyKeccak256()
+	hash := xsha3.NewLegacyKeccak256()
 	return sumReader(hash, reader)
 }
 
 // Keccak512Reader returns Keccak-512 checksum of content in reader
 func Keccak512Reader(reader io.Reader) (string, error) {
-	hash := sha3.NewLegacyKeccak512()
+	hash := xsha3.NewLegacyKeccak512()
 	return sumReader(hash, reader)
 }
 
@@ -67,7 +68,7 @@ func sumReader(hashAlgorithm hash.Hash, reader io.Reader) (string, error) {
 // with an existing cryptosystem that uses non-standard
 // padding. All other users should use New256 instead."
 func Keccak256sum(filename string) (string, error) {
-	return sum(sha3.NewLegacyKeccak256(), filename)
+	return sum(xsha3.NewLegacyKeccak256(), filename)
 }
 
 // Keccak512sum returns Keccak-512 checksum of filename
@@ -76,7 +77,7 @@ func Keccak256sum(filename string) (string, error) {
 // with an existing cryptosystem that uses non-standard
 // padding. All other users should use New512 instead."
 func Keccak512sum(filename string) (string, error) {
-	return sum(sha3.NewLegacyKeccak512(), filename)
+	return sum(xsha3.NewLegacyKeccak512(), filename)
 }
 
 // SHA3512sum returns SHA3-512 checksum of filename
@@ -119,7 +120,7 @@ func sum(hashAlgorithm hash.Hash, filename string) (string, error) {
 
 func SHA3512string(stringToHash string) string {
 	hash := sha3.New512()
-	hash.Write([]byte(stringToHash))
+	_, _ = hash.Write([]byte(stringToHash))
 	hashed := hash.Sum(nil)
 	return hex.EncodeToString(hashed)
 }
@@ -132,14 +133,14 @@ func SHA256string(stringToHash string) string {
 }
 
 func Keccak256string(stringToHash string) string {
-	hash := sha3.NewLegacyKeccak256()
+	hash := xsha3.NewLegacyKeccak256()
 	hash.Write([]byte(stringToHash))
 	hashed := hash.Sum(nil)
 	return hex.EncodeToString(hashed)
 }
 
 func Keccak512string(stringToHash string) string {
-	hash := sha3.NewLegacyKeccak512()
+	hash := xsha3.NewLegacyKeccak512()
 	hash.Write([]byte(stringToHash))
 	hashed := hash.Sum(nil)
 	return hex.EncodeToString(hashed)
