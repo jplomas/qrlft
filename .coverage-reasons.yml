@@ -1,0 +1,5 @@
+reasons:
+  - name: statistically-unreachable
+    description: "Runtime or dependency failures with no deterministic trigger; exercised by fuzzing or environmental failure testing where applicable"
+  - name: defensive-unreachable
+    description: "Defensive guards or process boundaries that the public testable API cannot reach by construction"

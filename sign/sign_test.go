@@ -11,6 +11,17 @@ import (
 	"github.com/theQRL/qrlft/crypto"
 )
 
+type failingSigner struct{}
+
+func (failingSigner) Sign([]byte) ([]byte, error) { return nil, os.ErrInvalid }
+func (failingSigner) GetPK() []byte               { return nil }
+func (failingSigner) GetSK() []byte               { return nil }
+func (failingSigner) GetHexSeed() string          { return "" }
+func (failingSigner) SignatureSize() int          { return 0 }
+func (failingSigner) PublicKeySize() int          { return 0 }
+func (failingSigner) SecretKeySize() int          { return 0 }
+func (failingSigner) AlgorithmName() string       { return "test" }
+
 func TestSignString(t *testing.T) {
 	hexseed := "d2003016f53e800092ecd8d8d3cb43208c73baf505f7710d1f4cee82c601f921"
 	signature, err := SignString("test", hexseed)
@@ -19,6 +30,15 @@ func TestSignString(t *testing.T) {
 	}
 	if len(signature) != 9190 {
 		t.Errorf("SignString() = %v, want %v", len(signature), 9190)
+	}
+}
+
+func TestSignMessageErrors(t *testing.T) {
+	if _, err := SignMessage([]byte("test"), "invalid"); err == nil {
+		t.Fatal("expected invalid seed error")
+	}
+	if _, err := SignMessageWithSigner([]byte("test"), failingSigner{}); err == nil {
+		t.Fatal("expected signer error")
 	}
 }
 
@@ -111,7 +131,7 @@ func TestSignWithPrivateKeyFile(t *testing.T) {
 
 	privateKeyHex := strings.TrimPrefix(keyData, "PRIVATEKEY:")
 	message := "test message"
-	signature, err := SignStringWithPrivateKey(message, privateKeyHex)
+	signature, err := SignStringWithPrivateKeyAndAlgorithm(message, privateKeyHex, crypto.AlgorithmDilithium, nil)
 	if err != nil {
 		t.Errorf("SignStringWithPrivateKey() error = %v", err)
 	}
@@ -146,7 +166,7 @@ func TestSignFileWithPrivateKey(t *testing.T) {
 
 	privateKeyHex := strings.TrimPrefix(keyData, "PRIVATEKEY:")
 	testFile := filepath.Join("..", "test_vectors", "ascii.txt")
-	signature, err := SignFileWithPrivateKey(testFile, privateKeyHex)
+	signature, err := SignFileWithPrivateKeyAndAlgorithm(testFile, privateKeyHex, crypto.AlgorithmDilithium, nil)
 	if err != nil {
 		t.Errorf("SignFileWithPrivateKey() error = %v", err)
 	}
@@ -177,7 +197,7 @@ func TestSignaturesMatch(t *testing.T) {
 		t.Fatalf("SignFile() with hexseed error = %v", err)
 	}
 
-	sig2, err := SignFileWithPrivateKey(testFile, privateKeyHex)
+	sig2, err := SignFileWithPrivateKeyAndAlgorithm(testFile, privateKeyHex, crypto.AlgorithmDilithium, nil)
 	if err != nil {
 		t.Fatalf("SignFileWithPrivateKey() error = %v", err)
 	}
@@ -315,14 +335,14 @@ func TestSignStringWithSigner(t *testing.T) {
 // ==================== Error path tests ====================
 
 func TestSignMessageWithPrivateKeyInvalidHex(t *testing.T) {
-	_, err := SignMessageWithPrivateKey([]byte("test"), "not-valid-hex")
+	_, err := SignMessageWithPrivateKeyAndAlgorithm([]byte("test"), "not-valid-hex", crypto.AlgorithmDilithium, nil)
 	if err == nil {
 		t.Error("SignMessageWithPrivateKey() expected error for invalid hex")
 	}
 }
 
 func TestSignMessageWithPrivateKeyWrongLength(t *testing.T) {
-	_, err := SignMessageWithPrivateKey([]byte("test"), "abcd1234")
+	_, err := SignMessageWithPrivateKeyAndAlgorithm([]byte("test"), "abcd1234", crypto.AlgorithmDilithium, nil)
 	if err == nil {
 		t.Error("SignMessageWithPrivateKey() expected error for wrong length")
 	}
@@ -343,10 +363,56 @@ func TestSignFileWithPrivateKeyNonexistent(t *testing.T) {
 	sk := signer.GetSK()
 	skHex := hex.EncodeToString(sk)
 
-	_, err := SignFileWithPrivateKey("/nonexistent/file.txt", skHex)
+	_, err := SignFileWithPrivateKeyAndAlgorithm("/nonexistent/file.txt", skHex, crypto.AlgorithmDilithium, nil)
 	if err == nil {
 		t.Error("SignFileWithPrivateKey() expected error for nonexistent file")
 	}
+}
+
+func TestSignMessageWithPrivateKeyUnknownAlgorithm(t *testing.T) {
+	_, err := SignMessageWithPrivateKeyAndAlgorithm([]byte("test"), "00", "unknown", nil)
+	if err == nil || !strings.Contains(err.Error(), "unknown algorithm") {
+		t.Fatalf("expected unknown algorithm error, got %v", err)
+	}
+}
+
+func TestMLDSAPrivateKeyFailsClosed(t *testing.T) {
+	signer, err := crypto.NewKeypair(crypto.AlgorithmMLDSA, []byte("test-context"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	skHex := hex.EncodeToString(signer.GetSK())
+
+	_, err = SignStringWithPrivateKeyAndAlgorithm("test", skHex, crypto.AlgorithmMLDSA, []byte("test-context"))
+	if err == nil || !strings.Contains(err.Error(), "not supported yet") {
+		t.Fatalf("expected ML-DSA private-key signing to fail closed, got %v", err)
+	}
+
+	testFile := filepath.Join("..", "test_vectors", "ascii.txt")
+	_, err = SignFileWithPrivateKeyAndAlgorithm(testFile, skHex, crypto.AlgorithmMLDSA, []byte("test-context"))
+	if err == nil || !strings.Contains(err.Error(), "not supported yet") {
+		t.Fatalf("expected ML-DSA file private-key signing to fail closed, got %v", err)
+	}
+}
+
+func TestMLDSAPrivateKeyValidation(t *testing.T) {
+	t.Run("truncated key", func(t *testing.T) {
+		_, err := SignMessageWithPrivateKeyAndAlgorithm([]byte("test"), "00", crypto.AlgorithmMLDSA, []byte("test-context"))
+		if err == nil || !strings.Contains(err.Error(), "invalid ML-DSA-87 private key length") {
+			t.Fatalf("expected ML-DSA key length error, got %v", err)
+		}
+	})
+
+	t.Run("empty context", func(t *testing.T) {
+		signer, err := crypto.NewKeypair(crypto.AlgorithmMLDSA, []byte("test-context"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = SignMessageWithPrivateKeyAndAlgorithm([]byte("test"), hex.EncodeToString(signer.GetSK()), crypto.AlgorithmMLDSA, nil)
+		if err == nil || !strings.Contains(err.Error(), "context is required") {
+			t.Fatalf("expected context error, got %v", err)
+		}
+	})
 }
 
 func TestReadFileDirectory(t *testing.T) {

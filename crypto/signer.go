@@ -49,8 +49,8 @@ const (
 
 // PEM header constants
 const (
-	PEMDilithiumPrivateKey    = "DILITHIUM PRIVATE KEY"
-	PEMDilithiumPublicKey     = "DILITHIUM PUBLIC KEY"
+	PEMDilithiumPrivateKey     = "DILITHIUM PRIVATE KEY"
+	PEMDilithiumPublicKey      = "DILITHIUM PUBLIC KEY"
 	PEMDilithiumPrivateHexseed = "DILITHIUM PRIVATE HEXSEED"
 
 	PEMMLDSAPrivateKey     = "ML-DSA-87 PRIVATE KEY"

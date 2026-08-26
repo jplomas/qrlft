@@ -22,6 +22,8 @@ func generateRandomSalt(saltSize int) ([]byte, error) {
 	var salt = make([]byte, saltSize)
 	_, err := rand.Read(salt[:])
 	if err != nil {
+		//coverage:ignore reason=statistically-unreachable
+		//rationale: crypto/rand.Read fails only when the operating system entropy source is unavailable
 		return nil, fmt.Errorf("failed to generate random salt: %w", err)
 	}
 	return salt, nil
@@ -72,6 +74,7 @@ func trimHexPrefix(s string) string {
 // readKeyFromFile reads a key file and detects if it's a hexseed or private key
 // Returns the hexseed string, detected algorithm, and an error
 func readKeyFromFile(filepath string) (string, string, error) {
+	// #nosec G304 -- the CLI is explicitly designed to read a user-selected key file.
 	file, err := os.Open(filepath)
 	if err != nil {
 		return "", "", fmt.Errorf("could not open key file %s: %w", filepath, err)
@@ -80,6 +83,8 @@ func readKeyFromFile(filepath string) (string, string, error) {
 
 	fileinfo, err := file.Stat()
 	if err != nil {
+		//coverage:ignore reason=statistically-unreachable
+		//rationale: the key descriptor was just opened; failure requires an external filesystem race
 		return "", "", fmt.Errorf("could not stat key file %s: %w", filepath, err)
 	}
 	if fileinfo.IsDir() {
@@ -89,6 +94,8 @@ func readKeyFromFile(filepath string) (string, string, error) {
 	filebuffer := make([]byte, fileinfo.Size())
 	_, err = file.Read(filebuffer)
 	if err != nil {
+		//coverage:ignore reason=statistically-unreachable
+		//rationale: exact-size read of a statted key file fails only under external mutation
 		return "", "", fmt.Errorf("could not read key file %s: %w", filepath, err)
 	}
 
@@ -96,6 +103,19 @@ func readKeyFromFile(filepath string) (string, string, error) {
 
 	// Detect algorithm from PEM headers
 	detectedAlgo := qcrypto.DetectAlgorithmFromPEM(content)
+
+	// RFC 9881 ML-DSA-87 private key (PKCS#8 / OneAsymmetricKey). Prefer
+	// the seed when present because go-qrllib can reconstruct the keypair.
+	if strings.HasPrefix(content, "-----BEGIN PRIVATE KEY-----") {
+		seed, expandedKey, err := qcrypto.ParseMLDSAPrivateKeyPEM([]byte(content))
+		if err != nil {
+			return "", "", fmt.Errorf("could not decode ML-DSA-87 private key: %w", err)
+		}
+		if len(seed) != 0 {
+			return hex.EncodeToString(seed), qcrypto.AlgorithmMLDSA, nil
+		}
+		return "PRIVATEKEY:" + hex.EncodeToString(expandedKey), qcrypto.AlgorithmMLDSA, nil
+	}
 
 	// Check if it's a hexseed file (RFC7468 format) - Dilithium
 	if strings.HasPrefix(content, "-----BEGIN DILITHIUM PRIVATE HEXSEED-----") {
@@ -159,6 +179,7 @@ func readKeyFromFile(filepath string) (string, string, error) {
 
 // readPublicKeyFromFile reads a public key file and returns the hex public key and detected algorithm
 func readPublicKeyFromFile(filepath string) (string, string, error) {
+	// #nosec G304 -- the CLI is explicitly designed to read a user-selected public key file.
 	file, err := os.Open(filepath)
 	if err != nil {
 		return "", "", fmt.Errorf("could not open public key file %s: %w", filepath, err)
@@ -167,6 +188,8 @@ func readPublicKeyFromFile(filepath string) (string, string, error) {
 
 	fileinfo, err := file.Stat()
 	if err != nil {
+		//coverage:ignore reason=statistically-unreachable
+		//rationale: the public-key descriptor was just opened; failure requires an external filesystem race
 		return "", "", fmt.Errorf("could not stat public key file %s: %w", filepath, err)
 	}
 	if fileinfo.IsDir() {
@@ -176,10 +199,21 @@ func readPublicKeyFromFile(filepath string) (string, string, error) {
 	pkfilebuffer := make([]byte, fileinfo.Size())
 	_, err = file.Read(pkfilebuffer)
 	if err != nil {
+		//coverage:ignore reason=statistically-unreachable
+		//rationale: exact-size read of a statted public-key file fails only under external mutation
 		return "", "", fmt.Errorf("could not read public key file %s: %w", filepath, err)
 	}
 
 	pk := strings.TrimSpace(string(pkfilebuffer))
+
+	// RFC 9881 ML-DSA-87 SubjectPublicKeyInfo.
+	if strings.HasPrefix(pk, "-----BEGIN PUBLIC KEY-----") {
+		pkBytes, err := qcrypto.ParseMLDSAPublicKeyPEM([]byte(pk))
+		if err != nil {
+			return "", "", fmt.Errorf("could not decode ML-DSA-87 public key: %w", err)
+		}
+		return hex.EncodeToString(pkBytes), qcrypto.AlgorithmMLDSA, nil
+	}
 
 	// Check for Dilithium PEM format
 	if strings.HasPrefix(pk, "-----BEGIN DILITHIUM PUBLIC KEY-----") {
@@ -228,8 +262,8 @@ var contextFlag = &cli.StringFlag{
 	Usage:   "Context string for ML-DSA-87 (required when using mldsa algorithm)",
 }
 
-func main() {
-	app := &cli.App{
+func newApp() *cli.App {
+	return &cli.App{
 		Name:  "qrlft",
 		Usage: "QRL File Tools - See docs at https://github.com/theQRL/qrlft",
 		Commands: []*cli.Command{
@@ -261,6 +295,9 @@ func main() {
 					contextFlag,
 				},
 				Action: func(ctx *cli.Context) error {
+					if err := qcrypto.ValidateAlgorithm(ctx.String("algorithm")); err != nil {
+						return cli.Exit(err.Error(), 78)
+					}
 					if ctx.String("signature") == "" && ctx.String("sigfile") == "" {
 						return cli.Exit("No signature provided", 78)
 					}
@@ -287,6 +324,7 @@ func main() {
 					for _, file := range files {
 						file := file
 
+						// #nosec G304 -- the CLI is explicitly designed to verify a user-selected file.
 						filecheck, err := os.Open(file)
 						if err != nil {
 							return cli.Exit("Error when verifying "+file, 78)
@@ -295,6 +333,8 @@ func main() {
 
 						fileinfo, err := filecheck.Stat()
 						if err != nil {
+							//coverage:ignore reason=statistically-unreachable
+							//rationale: the verification descriptor was just opened; failure requires a filesystem race
 							return cli.Exit("Error when verifying "+file, 77)
 						}
 						if fileinfo.IsDir() {
@@ -311,6 +351,8 @@ func main() {
 
 							sigfileinfo, err := sigfile.Stat()
 							if err != nil {
+								//coverage:ignore reason=statistically-unreachable
+								//rationale: the signature descriptor was just opened; failure requires a filesystem race
 								return cli.Exit("Could not open signature file "+ctx.String("sigfile"), 70)
 							}
 							if sigfileinfo.IsDir() {
@@ -319,6 +361,8 @@ func main() {
 							sigfilebuffer := make([]byte, sigfileinfo.Size())
 							_, err = sigfile.Read(sigfilebuffer)
 							if err != nil {
+								//coverage:ignore reason=statistically-unreachable
+								//rationale: exact-size read of a statted signature file fails only under external mutation
 								return cli.Exit("Could not read signature file "+ctx.String("sigfile"), 69)
 							}
 							signature = strings.TrimSpace(string(sigfilebuffer))
@@ -386,6 +430,9 @@ func main() {
 					contextFlag,
 				},
 				Action: func(ctx *cli.Context) error {
+					if err := qcrypto.ValidateAlgorithm(ctx.String("algorithm")); err != nil {
+						return cli.Exit(err.Error(), 78)
+					}
 					var hexseed string
 					var err error
 					var detectedAlgo string
@@ -440,7 +487,7 @@ func main() {
 						}
 						var signature string
 						if isPrivateKey {
-							signature, err = sign.SignStringWithPrivateKey(files[0], privateKeyHex)
+							signature, err = sign.SignStringWithPrivateKeyAndAlgorithm(files[0], privateKeyHex, algorithm, context)
 						} else if algorithm == qcrypto.AlgorithmMLDSA {
 							signature, err = sign.SignStringWithAlgorithm(files[0], hexseed, algorithm, context)
 						} else {
@@ -461,6 +508,7 @@ func main() {
 					for _, file := range files {
 						file := file
 
+						// #nosec G304 -- the CLI is explicitly designed to sign a user-selected file.
 						filecheck, err := os.Open(file)
 						if err != nil {
 							return cli.Exit("Error when signing "+file+" - "+err.Error(), 78)
@@ -469,6 +517,8 @@ func main() {
 
 						fileinfo, err := filecheck.Stat()
 						if err != nil {
+							//coverage:ignore reason=statistically-unreachable
+							//rationale: the signing descriptor was just opened; failure requires a filesystem race
 							return cli.Exit("Error when signing "+file, 77)
 						}
 						if fileinfo.IsDir() {
@@ -476,7 +526,7 @@ func main() {
 						}
 						var signature string
 						if isPrivateKey {
-							signature, err = sign.SignFileWithPrivateKey(file, privateKeyHex)
+							signature, err = sign.SignFileWithPrivateKeyAndAlgorithm(file, privateKeyHex, algorithm, context)
 						} else if algorithm == qcrypto.AlgorithmMLDSA {
 							signature, err = sign.SignFileWithAlgorithm(file, hexseed, algorithm, context)
 						} else {
@@ -513,6 +563,9 @@ func main() {
 					contextFlag,
 				},
 				Action: func(ctx *cli.Context) error {
+					if err := qcrypto.ValidateAlgorithm(ctx.String("algorithm")); err != nil {
+						return cli.Exit(err.Error(), 78)
+					}
 					if ctx.String("hexseed") == "" {
 						return cli.Exit("No hexseed provided", 78)
 					}
@@ -545,14 +598,27 @@ func main() {
 					pkBin := signer.GetPK()
 					pk := hex.EncodeToString(pkBin)
 
-					_, pemPK, _ := qcrypto.GetPEMHeaders(algorithm)
-
 					if !writeToConsole {
-						pkPEM, err := hexStringToRFC7468(pk)
+						var publicKeyFile []byte
+						if algorithm == qcrypto.AlgorithmMLDSA {
+							publicKeyFile, err = qcrypto.MarshalMLDSAPublicKeyPEM(pkBin)
+						} else {
+							_, pemPK, _ := qcrypto.GetPEMHeaders(algorithm)
+							pkPEM, encodeErr := hexStringToRFC7468(pk)
+							if encodeErr != nil {
+								//coverage:ignore reason=defensive-unreachable
+								//rationale: pk comes from hex.EncodeToString and cannot fail hexadecimal decoding
+								return cli.Exit("failed to encode public key: "+encodeErr.Error(), 63)
+							}
+							publicKeyFile = []byte("-----BEGIN " + pemPK + "-----" + pkPEM + "\n-----END " + pemPK + "-----\n")
+						}
 						if err != nil {
+							//coverage:ignore reason=defensive-unreachable
+							//rationale: the signer always returns a correctly sized ML-DSA-87 public key
 							return cli.Exit("failed to encode public key: "+err.Error(), 63)
 						}
-						if err := os.WriteFile(files[0], []byte("-----BEGIN "+pemPK+"-----"+pkPEM+"\n-----END "+pemPK+"-----"), 0644); err != nil {
+						// #nosec G306 -- public keys are intentionally world-readable.
+						if err := os.WriteFile(files[0], publicKeyFile, 0644); err != nil {
 							return cli.Exit("failed to write public key to file", 62)
 						}
 						return cli.Exit("", 0)
@@ -629,6 +695,7 @@ func main() {
 					}
 					for _, file := range files {
 						file := file
+						// #nosec G304 -- the CLI is explicitly designed to hash a user-selected file.
 						filecheck, err := os.Open(file)
 						if err != nil {
 							return cli.Exit("Error when hashing "+file+" - "+err.Error(), 78)
@@ -637,6 +704,8 @@ func main() {
 
 						fileinfo, err := filecheck.Stat()
 						if err != nil {
+							//coverage:ignore reason=statistically-unreachable
+							//rationale: the hash descriptor was just opened; failure requires a filesystem race
 							return cli.Exit("Error when hashing "+file, 77)
 						}
 						if fileinfo.IsDir() {
@@ -646,6 +715,8 @@ func main() {
 						if ctx.Bool("sha3-512") {
 							x, err := hash.SHA3512sum(file)
 							if err != nil {
+								//coverage:ignore reason=statistically-unreachable
+								//rationale: the regular file was just opened and statted; failure requires a filesystem race
 								return cli.Exit("File "+file+" not found", 83)
 							}
 							output(file, x, ctx.Bool("quiet"))
@@ -656,6 +727,8 @@ func main() {
 						if ctx.Bool("sha256") {
 							x, err := hash.SHA256sum(file)
 							if err != nil {
+								//coverage:ignore reason=statistically-unreachable
+								//rationale: the regular file was just opened and statted; failure requires a filesystem race
 								return cli.Exit("File "+file+" not found", 83)
 							}
 							output(file, x, ctx.Bool("quiet"))
@@ -666,6 +739,8 @@ func main() {
 						if ctx.Bool("keccak-256") {
 							x, err := hash.Keccak256sum(file)
 							if err != nil {
+								//coverage:ignore reason=statistically-unreachable
+								//rationale: the regular file was just opened and statted; failure requires a filesystem race
 								return cli.Exit("File "+file+" not found", 83)
 							}
 							output(file, x, ctx.Bool("quiet"))
@@ -676,6 +751,8 @@ func main() {
 						if ctx.Bool("keccak-512") {
 							x, err := hash.Keccak512sum(file)
 							if err != nil {
+								//coverage:ignore reason=statistically-unreachable
+								//rationale: the regular file was just opened and statted; failure requires a filesystem race
 								return cli.Exit("File "+file+" not found", 83)
 							}
 							output(file, x, ctx.Bool("quiet"))
@@ -686,6 +763,8 @@ func main() {
 						if ctx.Bool("blake2s") {
 							x, err := hash.Blake2s256(file)
 							if err != nil {
+								//coverage:ignore reason=statistically-unreachable
+								//rationale: the regular file was just opened and statted; failure requires a filesystem race
 								return cli.Exit("File "+file+" not found", 83)
 							}
 							output(file, x, ctx.Bool("quiet"))
@@ -709,6 +788,8 @@ func main() {
 					}
 					salt, err := generateRandomSalt(saltSize)
 					if err != nil {
+						//coverage:ignore reason=statistically-unreachable
+						//rationale: generateRandomSalt fails only when the operating system entropy source is unavailable
 						return cli.Exit("Failed to generate salt: "+err.Error(), 80)
 					}
 					if !ctx.Bool("quiet") {
@@ -732,6 +813,9 @@ func main() {
 					contextFlag,
 				},
 				Action: func(ctx *cli.Context) error {
+					if err := qcrypto.ValidateAlgorithm(ctx.String("algorithm")); err != nil {
+						return cli.Exit(err.Error(), 78)
+					}
 					algorithm := ctx.String("algorithm")
 					contextStr := ctx.String("context")
 					var context []byte
@@ -745,6 +829,8 @@ func main() {
 
 					signer, err := qcrypto.NewKeypair(algorithm, context)
 					if err != nil {
+						//coverage:ignore reason=statistically-unreachable
+						//rationale: algorithm/context are validated; key generation fails only with OS entropy failure
 						return cli.Exit("Failed to generate keypair: "+err.Error(), 61)
 					}
 
@@ -759,26 +845,64 @@ func main() {
 						return cli.Exit("Please specify an output file or use the --print flag to dump the keys to the console", 62)
 					}
 
-					pemSK, pemPK, pemHS := qcrypto.GetPEMHeaders(algorithm)
-
 					if writeToConsole {
 						fmt.Printf("Private Key:\n%s\n\n", hex.EncodeToString(sk))
 						fmt.Printf("Public Key: \n%s\n\n", hex.EncodeToString(pk))
 						fmt.Printf("Hexseed: \n%s\n", hs)
 					} else {
 						fmt.Printf("Write to file: %s\n", files[0])
+						if algorithm == qcrypto.AlgorithmMLDSA {
+							seed, decodeErr := hex.DecodeString(trimHexPrefix(hs))
+							if decodeErr != nil {
+								//coverage:ignore reason=defensive-unreachable
+								//rationale: GetHexSeed returns a hexadecimal encoding generated by go-qrllib
+								return cli.Exit("failed to decode ML-DSA-87 seed: "+decodeErr.Error(), 63)
+							}
+							privateKeyFile, encodeErr := qcrypto.MarshalMLDSAPrivateKeyPEM(seed)
+							if encodeErr != nil {
+								//coverage:ignore reason=defensive-unreachable
+								//rationale: go-qrllib always returns a correctly sized ML-DSA-87 seed
+								return cli.Exit("failed to encode private key: "+encodeErr.Error(), 63)
+							}
+							publicKeyFile, encodeErr := qcrypto.MarshalMLDSAPublicKeyPEM(pk)
+							if encodeErr != nil {
+								//coverage:ignore reason=defensive-unreachable
+								//rationale: the signer always returns a correctly sized ML-DSA-87 public key
+								return cli.Exit("failed to encode public key: "+encodeErr.Error(), 63)
+							}
+							if err := os.WriteFile(files[0], privateKeyFile, 0600); err != nil {
+								return cli.Exit("failed to write private key to file", 62)
+							}
+							// #nosec G306 -- public keys are intentionally world-readable.
+							if err := os.WriteFile(files[0]+".pub", publicKeyFile, 0644); err != nil {
+								return cli.Exit("failed to write public key to file", 62)
+							}
+							// Retain the established filename for consumers. RFC 9881 recommends
+							// this same seed-only PKCS#8 representation for storage.
+							if err := os.WriteFile(files[0]+".private.hexseed", privateKeyFile, 0600); err != nil {
+								return cli.Exit("failed to write private hexseed to file", 62)
+							}
+							return cli.Exit("", 0)
+						}
+
+						pemSK, pemPK, pemHS := qcrypto.GetPEMHeaders(algorithm)
 						skPEM, err := hexStringToRFC7468(hex.EncodeToString(sk))
 						if err != nil {
+							//coverage:ignore reason=defensive-unreachable
+							//rationale: sk comes from hex.EncodeToString and cannot fail hexadecimal decoding
 							return cli.Exit("failed to encode private key: "+err.Error(), 63)
 						}
 						pkPEM, err := hexStringToRFC7468(hex.EncodeToString(pk))
 						if err != nil {
+							//coverage:ignore reason=defensive-unreachable
+							//rationale: pk comes from hex.EncodeToString and cannot fail hexadecimal decoding
 							return cli.Exit("failed to encode public key: "+err.Error(), 63)
 						}
 						// Private key and hexseed files use 0600 (owner read/write only) for security
 						if err := os.WriteFile(files[0], []byte("-----BEGIN "+pemSK+"-----"+skPEM+"\n-----END "+pemSK+"-----\n"), 0600); err != nil {
 							return cli.Exit("failed to write private key to file", 62)
 						}
+						// #nosec G306 -- public keys are intentionally world-readable.
 						if err := os.WriteFile(files[0]+".pub", []byte("-----BEGIN "+pemPK+"-----"+pkPEM+"\n-----END "+pemPK+"-----\n"), 0644); err != nil {
 							return cli.Exit("failed to write public key to file", 62)
 						}
@@ -791,8 +915,14 @@ func main() {
 			},
 		},
 	}
+}
 
-	if err := app.Run(os.Args); err != nil {
+func main() {
+	//coverage:ignore reason=defensive-unreachable
+	//rationale: process-exit wiring is exercised through newApp; calling main in a test would terminate the test process via log.Fatal
+	if err := newApp().Run(os.Args); err != nil {
+		//coverage:ignore reason=defensive-unreachable
+		//rationale: cli failures are asserted as returned ExitCoder values through newApp, before the process-only log.Fatal boundary
 		log.Fatal(err)
 	}
 }

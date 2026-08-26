@@ -1,7 +1,13 @@
 BINARY_NAME=qrlft
 COVERAGE_FILE=coverage.out
+GO_IGNORE_COV=go run github.com/quantumcycle/go-ignore-cov@v0.7.1
 
-.PHONY: build test test-e2e test-all coverage coverage-html lint lint-workflows clean
+.PHONY: build check verify-modules test test-race test-e2e test-all coverage coverage-html lint lint-workflows clean
+
+check: verify-modules lint test-race coverage lint-workflows
+
+verify-modules:
+	go mod verify
 
 build:
 	go build -o $(BINARY_NAME) .
@@ -9,14 +15,19 @@ build:
 test:
 	go test ./...
 
+test-race:
+	go test -race ./...
+
 test-e2e:
 	go test -v ./e2e/...
 
-test-all: test test-e2e
+test-all: test
 
 coverage:
 	go test -coverprofile=$(COVERAGE_FILE) -covermode=atomic ./...
+	$(GO_IGNORE_COV) --file $(COVERAGE_FILE) --root . --require-reason
 	go tool cover -func=$(COVERAGE_FILE)
+	@test "$$(go tool cover -func=$(COVERAGE_FILE) | awk '/^total:/ {print $$3}')" = "100.0%" || (echo "coverage must remain at 100.0%" && exit 1)
 
 coverage-html: coverage
 	go tool cover -html=$(COVERAGE_FILE) -o coverage.html

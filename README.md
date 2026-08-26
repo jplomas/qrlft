@@ -19,7 +19,7 @@ go build
 
 | Algorithm | Description | Context Required |
 |-----------|-------------|------------------|
-| `dilithium` | CRYSTALS-Dilithium (default, pre-FIPS) | No |
+| `dilithium` | CRYSTALS-Dilithium (pre-FIPS) | No |
 | `mldsa` | ML-DSA-87 (FIPS 204 standard) | Yes |
 
 ## Commands
@@ -27,48 +27,53 @@ go build
 ### Generate Keypair
 
 ```bash
-# Dilithium (default)
-qrlft new mykey
+# Dilithium
 qrlft new -a dilithium mykey
-qrlft new-dilithium mykey  # alias
+qrlft new-dilithium -a dilithium mykey  # alias
 
 # ML-DSA-87 (requires context)
 qrlft new -a mldsa --context="myapp" mykey
-qrlft new-mldsa --context="myapp" mykey  # alias
+qrlft new-mldsa -a mldsa --context="myapp" mykey  # alias
 
 # Print to console instead of file
-qrlft new --print
+qrlft new -a dilithium --print
 ```
 
-Output files: `mykey` (private key), `mykey.pub` (public key), `mykey.private.hexseed` (hexseed)
+Output files: `mykey` (private key), `mykey.pub` (public key), and
+`mykey.private.hexseed` (compatibility copy of the private seed key)
+
+ML-DSA-87 private and public keys use the standardized RFC 9881 PKCS#8 and
+SubjectPublicKeyInfo encodings. Both `mykey` and the retained
+`mykey.private.hexseed` compatibility filename contain the same recommended
+seed-only PKCS#8 private-key representation and can be supplied to `--keyfile`.
 
 ### Sign Files
 
 ```bash
 # Using hexseed file
-qrlft sign --keyfile=mykey.private.hexseed document.txt
+qrlft sign -a dilithium --keyfile=mykey.private.hexseed document.txt
 
 # Using hexseed directly
-qrlft sign --hexseed=abc123... document.txt
+qrlft sign -a dilithium --hexseed=abc123... document.txt
 
-# ML-DSA-87 with context
-qrlft sign -a mldsa --context="myapp" --keyfile=mykey.private.hexseed document.txt
+# ML-DSA-87 with context and its standard private key
+qrlft sign -a mldsa --context="myapp" --keyfile=mykey document.txt
 
 # Sign a string
-qrlft sign -s --hexseed=abc123... "Hello World"
+qrlft sign -a dilithium -s --hexseed=abc123... "Hello World"
 
 # Quiet mode (signature only)
-qrlft sign --quiet --keyfile=mykey.private.hexseed document.txt
+qrlft sign -a dilithium --quiet --keyfile=mykey.private.hexseed document.txt
 ```
 
 ### Verify Signatures
 
 ```bash
 # From signature file
-qrlft verify --sigfile=document.sig --pkfile=mykey.pub document.txt
+qrlft verify -a dilithium --sigfile=document.sig --pkfile=mykey.pub document.txt
 
 # From command line
-qrlft verify --signature=abc123... --publickey=def456... document.txt
+qrlft verify -a dilithium --signature=abc123... --publickey=def456... document.txt
 
 # ML-DSA-87 with context
 qrlft verify -a mldsa --context="myapp" --sigfile=document.sig --pkfile=mykey.pub document.txt
@@ -78,10 +83,10 @@ qrlft verify -a mldsa --context="myapp" --sigfile=document.sig --pkfile=mykey.pu
 
 ```bash
 # Write to file
-qrlft publickey --hexseed=abc123... mykey.pub
+qrlft publickey -a dilithium --hexseed=abc123... mykey.pub
 
 # Print to console
-qrlft publickey --print --hexseed=abc123...
+qrlft publickey -a dilithium --print --hexseed=abc123...
 
 # ML-DSA-87
 qrlft publickey -a mldsa --context="myapp" --hexseed=abc123... mykey.pub
@@ -110,7 +115,7 @@ qrlft salt 32  # Generate 32 bytes of random salt
 
 ## Key File Formats
 
-Keys are stored in PEM format:
+Keys are stored using RFC 7468 textual encodings:
 
 **Dilithium:**
 ```
@@ -119,14 +124,24 @@ Keys are stored in PEM format:
 -----END DILITHIUM PRIVATE KEY-----
 ```
 
-**ML-DSA-87:**
+Legacy pre-FIPS Dilithium has no finalized PKIX key format, so its labels and
+raw payload remain qrlft-specific.
+
+**ML-DSA-87 (RFC 9881):**
 ```
------BEGIN ML-DSA-87 PRIVATE KEY-----
-...base64 encoded key...
------END ML-DSA-87 PRIVATE KEY-----
+-----BEGIN PRIVATE KEY-----
+...base64 encoded PKCS#8 OneAsymmetricKey containing the seed...
+-----END PRIVATE KEY-----
+
+-----BEGIN PUBLIC KEY-----
+...base64 encoded SubjectPublicKeyInfo...
+-----END PUBLIC KEY-----
 ```
 
-The algorithm is auto-detected from key file headers when using `--keyfile`.
+The algorithm remains required. When a PEM key file is supplied, its custom
+header or, for standard ML-DSA files, its algorithm identifier is detected and
+checked against `--algorithm`; a mismatch is rejected. Older qrlft ML-DSA files
+with algorithm-specific labels remain readable for migration.
 
 ## ML-DSA-87 Context
 
@@ -138,7 +153,7 @@ ML-DSA-87 (FIPS 204) requires a context parameter for domain separation:
 
 ```bash
 # Sign with context
-qrlft sign -a mldsa --context="myapp-v1" --keyfile=key.hexseed doc.txt > doc.sig
+qrlft sign -a mldsa --context="myapp-v1" --keyfile=key doc.txt > doc.sig
 
 # Verify with same context (succeeds)
 qrlft verify -a mldsa --context="myapp-v1" --sigfile=doc.sig --pkfile=key.pub doc.txt
@@ -181,6 +196,15 @@ This approach is standard practice for signing large files and is used by tools 
 - **Public key files** are created with `0644` permissions (world-readable)
 - **Do not expose as a service**: This is a CLI tool designed for local use. Post-quantum cryptographic operations are computationally expensive. If you need to expose signing/verification as a service, implement proper rate limiting, authentication, and resource controls
 - **Context for ML-DSA-87**: Always use a unique, application-specific context string to ensure domain separation between different uses of the same key
+
+## Development checks
+
+Run the complete local gate with `make check`. Coverage is ratcheted at 100%:
+`make coverage` generates `coverage.out`, applies source-level exclusions with
+the pinned `go-ignore-cov` version, and fails unless the processed profile is
+exactly 100%. Every exclusion must use an approved reason from
+`.coverage-reasons.yml` and include an adjacent `//rationale:` comment;
+testable behavior must be covered by a test instead.
 
 ## License
 

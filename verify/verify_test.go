@@ -48,7 +48,7 @@ func TestVerifyMessageInvalidSignatureHex(t *testing.T) {
 }
 
 func TestVerifyMessageInvalidSignatureLength(t *testing.T) {
-	pk := strings.Repeat("ab", 2592) // Valid length PK
+	pk := strings.Repeat("ab", 2592)                        // Valid length PK
 	_, err := VerifyMessage([]byte("test"), "abcd1234", pk) // Too short
 	if err == nil {
 		t.Error("VerifyMessage() should return error for invalid signature length")
@@ -64,7 +64,7 @@ func TestVerifyMessageInvalidPKHex(t *testing.T) {
 }
 
 func TestVerifyMessageInvalidPKLength(t *testing.T) {
-	sig := strings.Repeat("ab", 4595) // Valid length signature
+	sig := strings.Repeat("ab", 4595)                        // Valid length signature
 	_, err := VerifyMessage([]byte("test"), sig, "abcd1234") // Too short
 	if err == nil {
 		t.Error("VerifyMessage() should return error for invalid public key length")
@@ -174,7 +174,7 @@ func TestVerifyWithTestVectorsPrivateKey(t *testing.T) {
 
 	privateKeyHex := strings.TrimPrefix(keyData, "PRIVATEKEY:")
 	testFile := filepath.Join("..", "test_vectors", "ascii.txt")
-	signature, err := sign.SignFileWithPrivateKey(testFile, privateKeyHex)
+	signature, err := sign.SignFileWithPrivateKeyAndAlgorithm(testFile, privateKeyHex, crypto.AlgorithmDilithium, nil)
 	if err != nil {
 		t.Fatalf("SignFileWithPrivateKey() error = %v", err)
 	}
