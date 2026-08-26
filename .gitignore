@@ -5,3 +5,8 @@ qrlft.exe
 /coverage.html
 *.prof
 *.test
+
+# Release signing key material - never commit these.
+# The matching public key (qrlft-release-key.pub) is committed on purpose.
+/qrlft-release-key
+/qrlft-release-key.private.hexseed
