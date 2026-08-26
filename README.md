@@ -5,7 +5,7 @@ Command-line tools for quantum-resistant file signing, verification, and hashing
 ## Installation
 
 ```bash
-go install github.com/theQRL/qrlft@latest
+go install github.com/theQRL/qrlft/v4@latest
 ```
 
 Or build from source:

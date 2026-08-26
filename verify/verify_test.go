@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/theQRL/go-qrllib/crypto/dilithium"
-	"github.com/theQRL/qrlft/crypto"
-	"github.com/theQRL/qrlft/sign"
+	"github.com/theQRL/qrlft/v4/crypto"
+	"github.com/theQRL/qrlft/v4/sign"
 )
 
 func TestVerifyMessage(t *testing.T) {

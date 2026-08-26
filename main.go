@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"strings"
 
-	qcrypto "github.com/theQRL/qrlft/crypto"
-	"github.com/theQRL/qrlft/hash"
-	"github.com/theQRL/qrlft/sign"
-	"github.com/theQRL/qrlft/verify"
+	qcrypto "github.com/theQRL/qrlft/v4/crypto"
+	"github.com/theQRL/qrlft/v4/hash"
+	"github.com/theQRL/qrlft/v4/sign"
+	"github.com/theQRL/qrlft/v4/verify"
 	"github.com/urfave/cli/v2"
 )
 

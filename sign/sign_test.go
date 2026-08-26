@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/theQRL/qrlft/crypto"
+	"github.com/theQRL/qrlft/v4/crypto"
 )
 
 type failingSigner struct{}

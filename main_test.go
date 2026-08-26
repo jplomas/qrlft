@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	qcrypto "github.com/theQRL/qrlft/crypto"
-	"github.com/theQRL/qrlft/sign"
+	qcrypto "github.com/theQRL/qrlft/v4/crypto"
+	"github.com/theQRL/qrlft/v4/sign"
 	"github.com/urfave/cli/v2"
 )
 

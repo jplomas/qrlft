@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/theQRL/go-qrllib/crypto/dilithium"
-	"github.com/theQRL/qrlft/crypto"
+	"github.com/theQRL/qrlft/v4/crypto"
 )
 
 // VerifyFile verifies a signature against a file (Dilithium, for backward compatibility)

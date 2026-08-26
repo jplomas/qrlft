@@ -1,4 +1,4 @@
-module github.com/theQRL/qrlft
+module github.com/theQRL/qrlft/v4
 
 go 1.22
 
