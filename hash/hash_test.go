@@ -1,11 +1,17 @@
 package hash
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("read failed") }
 
 // ==================== Reader-based tests ====================
 
@@ -61,6 +67,15 @@ func TestBlake2s256Reader(t *testing.T) {
 	}
 	if hash != "f308fc02ce9172ad02a7d75800ecfc027109bc67987ea32aba9b8dcc7b10150e" {
 		t.Errorf("Blake2s256Reader() = %v, want %v", hash, "f308fc02ce9172ad02a7d75800ecfc027109bc67987ea32aba9b8dcc7b10150e")
+	}
+}
+
+func TestReaderError(t *testing.T) {
+	if _, err := SHA256sumReader(failingReader{}); err == nil {
+		t.Fatal("expected reader error")
+	}
+	if _, err := SHA256sumReader(io.LimitReader(strings.NewReader("test"), 4)); err != nil {
+		t.Fatalf("expected data then EOF to succeed: %v", err)
 	}
 }
 

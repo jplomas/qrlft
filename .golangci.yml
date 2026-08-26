@@ -1,0 +1,26 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - asasalint
+    - errcheck
+    - gosec
+    - govet
+    - ineffassign
+    - nilerr
+    - staticcheck
+
+  exclusions:
+    rules:
+      - path: '.*_test\.go'
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

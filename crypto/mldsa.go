@@ -19,6 +19,8 @@ func NewMLDSASigner(hexseed string, ctx []byte) (*MLDSASigner, error) {
 	}
 	d, err := ml_dsa_87.NewMLDSA87FromHexSeed(hexseed)
 	if err != nil {
+		//coverage:ignore reason=statistically-unreachable
+		//rationale: invalid seeds are tested; go-qrllib exposes no second post-validation failure trigger
 		return nil, err
 	}
 	// Make a defensive copy of context to prevent caller modifications
@@ -34,6 +36,8 @@ func NewMLDSAKeypair(ctx []byte) (*MLDSASigner, error) {
 	}
 	d, err := ml_dsa_87.New()
 	if err != nil {
+		//coverage:ignore reason=statistically-unreachable
+		//rationale: go-qrllib key generation fails only when the operating system entropy source fails
 		return nil, err
 	}
 	// Make a defensive copy of context to prevent caller modifications
@@ -49,6 +53,8 @@ func (s *MLDSASigner) Sign(message []byte) ([]byte, error) {
 	}
 	sig, err := s.d.Sign(s.ctx, message)
 	if err != nil {
+		//coverage:ignore reason=statistically-unreachable
+		//rationale: context and signer are validated; go-qrllib exposes no deterministic signing failure
 		return nil, err
 	}
 	return sig[:], nil

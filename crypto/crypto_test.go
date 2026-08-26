@@ -556,6 +556,20 @@ func TestMLDSAVerifierContextDefensiveCopy(t *testing.T) {
 
 // ==================== Factory Tests ====================
 
+func TestValidateAlgorithm(t *testing.T) {
+	for _, algorithm := range []string{AlgorithmDilithium, AlgorithmMLDSA} {
+		if err := ValidateAlgorithm(algorithm); err != nil {
+			t.Errorf("ValidateAlgorithm(%q) error = %v", algorithm, err)
+		}
+	}
+
+	for _, algorithm := range []string{"", "garbage", "MLDSA", "ml-dsa"} {
+		if err := ValidateAlgorithm(algorithm); err == nil {
+			t.Errorf("ValidateAlgorithm(%q) expected error", algorithm)
+		}
+	}
+}
+
 func TestNewSignerDilithium(t *testing.T) {
 	signer, err := NewSigner(AlgorithmDilithium, testDilithiumHexseed, nil)
 	if err != nil {

@@ -90,6 +90,35 @@ func TestAlgorithmRequired(t *testing.T) {
 	}
 }
 
+func TestUnknownAlgorithmRejected(t *testing.T) {
+	testFile := filepath.Join(t.TempDir(), "test.txt")
+	if err := os.WriteFile(testFile, []byte("test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"new", []string{"new", "-a", "garbage", "-p"}},
+		{"publickey", []string{"publickey", "-a", "garbage", "--hexseed=00", "-p"}},
+		{"sign with hexseed", []string{"sign", "-a", "garbage", "--hexseed=00", testFile}},
+		{"verify", []string{"verify", "-a", "garbage", "--signature=00", "--publickey=00", testFile}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, stderr, err := runCmd(t, tt.args...)
+			if err == nil {
+				t.Fatal("expected unknown algorithm to be rejected")
+			}
+			if !strings.Contains(stderr, "unknown algorithm") {
+				t.Fatalf("expected unknown algorithm error, got %q", stderr)
+			}
+		})
+	}
+}
+
 // TestDilithiumKeyGeneration tests the full key generation workflow for Dilithium
 func TestDilithiumKeyGeneration(t *testing.T) {
 	stdout := mustRun(t, "new", "-a", "dilithium", "-p")
@@ -409,8 +438,8 @@ func TestKeyFileWorkflow(t *testing.T) {
 
 	// Verify key files were created
 	keyFiles := []string{
-		keyBasePath,                    // private key
-		keyBasePath + ".pub",           // public key
+		keyBasePath,                      // private key
+		keyBasePath + ".pub",             // public key
 		keyBasePath + ".private.hexseed", // hexseed
 	}
 	for _, f := range keyFiles {
@@ -470,6 +499,40 @@ func TestAlgorithmMismatchDetection(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "Algorithm mismatch") {
 		t.Errorf("expected algorithm mismatch error, got: %s", stderr)
+	}
+}
+
+func TestMLDSAStandardPrivateKeySigning(t *testing.T) {
+	tempDir := t.TempDir()
+	keyPath := filepath.Join(tempDir, "mldsa-key")
+	if _, _, err := runCmd(t, "new", "-a", "mldsa", "--context=test", keyPath); err != nil {
+		t.Fatal("failed to create ML-DSA key:", err)
+	}
+
+	testFile := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	privateKey, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicKey, err := os.ReadFile(keyPath + ".pub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(privateKey), "-----BEGIN PRIVATE KEY-----\n") || !strings.HasPrefix(string(publicKey), "-----BEGIN PUBLIC KEY-----\n") {
+		t.Fatal("ML-DSA keys do not use the RFC 7468 PRIVATE KEY/PUBLIC KEY labels")
+	}
+
+	signature := strings.TrimSpace(mustRun(t, "sign", "-a", "mldsa", "--context=test", "--keyfile="+keyPath, "--quiet", testFile))
+	stdout, stderr, err := runCmd(t, "verify", "-a", "mldsa", "--context=test", "--signature="+signature, "--pkfile="+keyPath+".pub", testFile)
+	if err != nil || !strings.Contains(stdout+stderr, "Signature is valid") {
+		t.Fatalf("standard-key round trip failed: %v, stdout=%q, stderr=%q", err, stdout, stderr)
+	}
+	if _, stderr, err := runCmd(t, "sign", "-a", "mldsa", "--context=test", "--keyfile="+keyPath, "--string", "test"); err != nil {
+		t.Fatalf("string signing with standard private key failed: %v, stderr=%q", err, stderr)
 	}
 }
 

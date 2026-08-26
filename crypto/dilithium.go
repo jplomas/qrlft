@@ -16,6 +16,8 @@ type DilithiumSigner struct {
 func NewDilithiumSigner(hexseed string) (*DilithiumSigner, error) {
 	d, err := dilithium.NewDilithiumFromHexSeed(hexseed)
 	if err != nil {
+		//coverage:ignore reason=statistically-unreachable
+		//rationale: invalid seeds are tested; go-qrllib exposes no second post-validation failure trigger
 		return nil, err
 	}
 	return &DilithiumSigner{d: d}, nil
@@ -25,6 +27,8 @@ func NewDilithiumSigner(hexseed string) (*DilithiumSigner, error) {
 func NewDilithiumKeypair() (*DilithiumSigner, error) {
 	d, err := dilithium.New()
 	if err != nil {
+		//coverage:ignore reason=statistically-unreachable
+		//rationale: go-qrllib key generation fails only when the operating system entropy source fails
 		return nil, err
 	}
 	return &DilithiumSigner{d: d}, nil
@@ -37,6 +41,8 @@ func (s *DilithiumSigner) Sign(message []byte) ([]byte, error) {
 	}
 	sig, err := s.d.Sign(message)
 	if err != nil {
+		//coverage:ignore reason=statistically-unreachable
+		//rationale: a successfully initialized go-qrllib signer exposes no deterministic signing failure
 		return nil, err
 	}
 	return sig[:], nil
@@ -147,6 +153,8 @@ func SignWithDilithiumSK(message []byte, skHex string) ([]byte, error) {
 
 	sig, err := dilithium.SignWithSecretKey(message, &sk)
 	if err != nil {
+		//coverage:ignore reason=statistically-unreachable
+		//rationale: the fixed-size key is validated; go-qrllib exposes no deterministic signing failure for it
 		return nil, err
 	}
 	return sig[:], nil
