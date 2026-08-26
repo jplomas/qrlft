@@ -8,7 +8,7 @@ import (
 
 	"github.com/theQRL/go-qrllib/crypto/dilithium"
 	"github.com/theQRL/go-qrllib/crypto/ml_dsa_87"
-	"github.com/theQRL/qrlft/crypto"
+	"github.com/theQRL/qrlft/v4/crypto"
 )
 
 // SignMessage signs a message using a hexseed (Dilithium, for backward compatibility)
